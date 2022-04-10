@@ -1,5 +1,12 @@
+#include <linux/init.h>
 #include <linux/module.h>
-#include <linux/device.h>
+#include <linux/types.h>
+#include <linux/kernel.h>
+#include <linux/fs.h>
+#include <linux/cdev.h>
+#include <linux/sched.h>
+#include <asm/current.h>
+#include <asm/uaccess.h>
 
 #define MODULE_NAME "hello_driver"
 
@@ -7,28 +14,36 @@ MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("This is a hello driver");
 MODULE_AUTHOR("Yuuki Arisawa");
 
-static int g_param1 = 100;
-module_param(g_param1,int,0);
-MODULE_PARM_DESC(g_param1,"Test parameter 1 (default:100)");
-
-static int g_param2 = 200;
-module_param(g_param2,int,S_IRUGO);
-MODULE_PARM_DESC(g_param2,"Test parameter 2 (default:200)");
-
-static int g_param3 = 300;
-module_param(g_param3,int,(S_IRUGO | S_IWUGO) & ~S_IWOTH);
-MODULE_PARM_DESC(g_param3,"Test parameter 3 (default:300)");
-
-
+#define SAMPLE_MAJOR 300
+#define DEVICE_NAME "devsample"
+static int g_major_num=SAMPLE_MAJOR;
 struct hello_driver {
   struct device_driver driver;
 };
 
-static int hello_init(struct hello_driver *drv){
-  printk(KERN_ALERT "hello driver loaded\n");
+static int sample_open(struct inode *node,struct file *filp){
+  printk("%s entered\n",__func__);
   return 0;
 }
+
+static int sample_close(struct inode *node,struct file *filp){
+  printk("%s entered\n",__func__);
+  return 0;
+}
+
+static const struct file_operations sample_fops = {
+  .open = sample_open,
+  .release = sample_close,
+};
+
+static int hello_init(struct hello_driver *drv){
+  int ret=register_chrdev(g_major_num,DEVICE_NAME,&sample_fops);
+  printk(KERN_ALERT "hello driver loaded\n");
+  return ret;
+}
+
 static void hello_exit(struct hello_driver *drv){
+  unregister_chrdev(g_major_num,DEVICE_NAME);
   printk(KERN_ALERT "hello driver unloaded\n");
 }
 

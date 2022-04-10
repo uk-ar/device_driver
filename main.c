@@ -31,9 +31,22 @@ static int sample_close(struct inode *node,struct file *filp){
   return 0;
 }
 
+static ssize_t sample_read(struct file *filp,char __user *buf,size_t count,loff_t *f_pos){
+  printk("%s entered\n",__func__);
+  buf[0]='A';
+  return 1;
+}
+
+static ssize_t sample_write(struct file *filp,const char __user *buf,size_t count,loff_t *f_pos){
+  printk("%s entered\n",__func__);
+  return 1;
+}
+
 static const struct file_operations sample_fops = {
-  .open = sample_open,
+  .open    = sample_open,
   .release = sample_close,
+  .read    = sample_read,
+  .write   = sample_write,
 };
 
 static int hello_init(struct hello_driver *drv){

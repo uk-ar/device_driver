@@ -1,15 +1,28 @@
 #include <linux/module.h>
+#include <linux/device.h>
+
+#define MODULE_NAME "hello_driver"
 
 MODULE_LICENSE("Dual BSD/GPL");
+MODULE_DESCRIPTION("This is a hello driver");
+MODULE_AUTHOR("Yuuki Arisawa");
 
-static int hello_init(void){
-  printk(KERN_ALERT "driver loaded\n");
-  printk(KERN_ALERT "Hello World\n");
+struct hello_driver {
+  struct device_driver driver;
+};
+
+static int hello_init(struct hello_driver *drv){
+  printk(KERN_ALERT "hello driver loaded\n");
   return 0;
 }
-static void hello_exit(void){
-  printk(KERN_ALERT "driver unloaded\n");
+static void hello_exit(struct hello_driver *drv){
+  printk(KERN_ALERT "hello driver unloaded\n");
 }
 
-module_init(hello_init);
-module_exit(hello_exit);
+static struct hello_driver he_drv={
+  .driver = {
+    .name = MODULE_NAME,
+  }
+};
+
+module_driver(he_drv,hello_init,hello_exit);

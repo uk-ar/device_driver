@@ -10,6 +10,8 @@ KERNELDIR := /home/ubuntu/ubuntu/buildroot-2022.02/output/build/linux-5.15.18
 PWD := $(shell pwd)
 
 all:
-	make $(ARM_ARCH) $(ARM_CC) -C $(KERNELDIR) M=$(PWD) modules
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+#make $(ARM_ARCH) $(ARM_CC) -C $(KERNELDIR) M=$(PWD) modules
 clean:
-	make $(ARM_ARCH) $(ARM_CC) -C $(KERNELDIR) M=$(PWD) clean
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+#make $(ARM_ARCH) $(ARM_CC) -C $(KERNELDIR) M=$(PWD) clean

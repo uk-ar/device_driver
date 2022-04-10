@@ -1,4 +1,7 @@
+CFILES = main.c sub.c
+
 obj-m := hello.o
+hello-objs :=$(CFILES:.c=.o)
 
 ARM_ARCH := ARCH=arm64
 ARM_CC := CROSS_COMPILE=aarch64-buildroot-linux-uclibc-

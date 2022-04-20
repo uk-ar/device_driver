@@ -14,7 +14,7 @@ int main(void){
   int val;
   struct sample_data_cmd dcmd;
 
-  fd=open("/dev/samplehw", O_RDWR);
+  fd=open("/dev/samplehw0", O_RDWR);
   if(fd==-1)
     perror("open");
 
@@ -23,7 +23,7 @@ int main(void){
   if(ret){
     printf("READCMD: ioctl error:%d\n",ret);
   }else{
-    printf("READCMD: ioctl val:%d\n",val);
+    printf("READCMD: ioctl val:0x%x\n",val);
   }
 
   val = 0x1234abcd;

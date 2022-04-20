@@ -10,6 +10,7 @@
 
 #include <asm/current.h>
 #include <asm/uaccess.h>
+#include "sample.h"
 
 #define MODULE_NAME "hello_driver"
 
@@ -67,18 +68,25 @@ static char g_buffer[BUFFER_MAX];
 static size_t g_buffer_count;
 wait_queue_head_t g_read_wait;
 
-//      xxxx
-//MAX       ^
-//count   ^
+static DEFINE_MUTEX(g_mutex);
+
+static inline bool buffer_readable(void){
+  return (g_buffer_count > 0);
+}
+//バッファ共有　排他あり
 static ssize_t sample_write(struct file *filp,const char __user *buf,size_t count,loff_t *f_pos){
   //書き込める最大バイト数
+
+  mutex_lock(&g_mutex);//g_buffer_countとg_bufferを排他
   size_t len=min(BUFFER_MAX-g_buffer_count,count);
   if(len==0){
     printk("%s:%zu+%zu overflow\n",__func__,g_buffer_count,count);
+    mutex_unlock(&g_mutex);
     return -ENOSPC;
   }
   //g_buffer_countの位置からlenだけ書き込み
   //戻り値は書き込めなかった残り
+  //unsigned long rem = 0;
   unsigned long rem = copy_from_user(&g_buffer[g_buffer_count],buf,len);
   printk("copy_from_user %lu\n",rem);
   ssize_t written;
@@ -88,24 +96,133 @@ static ssize_t sample_write(struct file *filp,const char __user *buf,size_t coun
     written=len;
   }
   g_buffer_count+=written;
-  //読み込み待ちをしているプロセスに通知
+  //読み込み待ちをしているプロセスに通知(割り込み可能)
   wake_up_interruptible(&g_read_wait);
 
+  mutex_unlock(&g_mutex);
   return written;
 }
+static int sample_do_ioctl(struct file *filp,unsigned int cmd,unsigned long arg){
+  int ret;
+  int val;
+  void __user *argp=(void __user *)arg;
+  struct sample_data_cmd data_cmd;
+  //struct compat_sample_data_cmd compat_data_cmd;
 
-static inline bool buffer_readable(void){
-  return (g_buffer_count > 0);
+  switch(cmd){
+  case READCMD:
+    printk("READCMD\n",val);
+    val = 0xcafebabe;
+    ret = copy_to_user(argp,&val,sizeof(val));
+    if(ret)
+      return -EFAULT;
+    break;
+  case WRITECMD:
+    printk("WRITECMD\n",val);
+    ret=copy_from_user(&val,argp,sizeof(val));
+    if(ret)
+      return -EFAULT;
+    printk("WRITECMD %x\n",val);
+    break;
+  case DATACMD:
+    printk("DATACMD\n",val);
+    ret=copy_from_user(&data_cmd,argp,sizeof(data_cmd));
+    if(ret)
+      return -EFAULT;
+    printk("DATACMD: mask %x val %lx sizeof %zu\n",
+           data_cmd.mask,data_cmd.val,sizeof(data_cmd));
+    break;
+  default:
+    return -EINVAL;
+  }
+  return 0;
 }
-
+static long sample_ioctl(struct file *filp,unsigned int cmd,unsigned long arg){
+  long ret;
+  printk("%s entering\n",__func__);
+  mutex_lock(&g_mutex);
+  ret = sample_do_ioctl(filp,cmd,arg);
+  mutex_lock(&g_mutex);
+  printk("%s entered\n",__func__);
+  return ret;
+}
+//バッファ共有　排他あり
 static ssize_t sample_read(struct file *filp,char __user *buf,size_t count,loff_t *f_pos){
   unsigned long rem;
   size_t copied,res;
-  int ret;
-
+  int ret=0;
+  printk("%s entered\n",__func__);
   //実態はマクロ、conditionが0の場合に現在のプロセスを待ちにする
-  //wake_up されるとconditionを判定し、0以外であれば待ちを解除
+  //wake_up されるとconditionを判定し、0以外であれば待ちを解除(割り込み可能)
   ret=wait_event_interruptible(g_read_wait,buffer_readable());
+  //wait_event(g_read_wait,buffer_readable());
+  //ret=wait_event_interruptible(g_read_wait,g_buffer_count>0);でもOK
+  //シグナル受信した場合
+  if(ret<0){
+    return -ERESTARTSYS;
+  }
+  mutex_lock(&g_mutex);
+  //読み込み可能な最大バイト数
+  copied=min(g_buffer_count,count);
+  rem=copy_to_user(buf,g_buffer,copied);
+  printk("%s copied\n",__func__);
+  if(rem){
+    mutex_unlock(&g_mutex);
+    return -EFAULT;
+  }
+  //       xxxx
+  //MAX        ^
+  //count    ^
+  //copied  ^
+  res=g_buffer_count-copied;
+  //まだバッファにデータが残っている場合はデータを前方にコピー
+  if(res>0)
+    memmove(&g_buffer[0],&g_buffer[copied],res);
+
+  g_buffer_count=res;
+  mutex_unlock(&g_mutex);
+  return copied;
+}
+
+//      xxxx
+//MAX       ^
+//count   ^
+//バッファ共有　排他なし
+static ssize_t sample_write_shared(struct file *filp,const char __user *buf,size_t count,loff_t *f_pos){
+  //書き込める最大バイト数
+  size_t len=min(BUFFER_MAX-g_buffer_count,count);
+  if(len==0){
+    printk("%s:%zu+%zu overflow\n",__func__,g_buffer_count,count);
+    return -ENOSPC;
+  }
+  //g_buffer_countの位置からlenだけ書き込み
+  //戻り値は書き込めなかった残り
+  //unsigned long rem = 0;
+  unsigned long rem = copy_from_user(&g_buffer[g_buffer_count],buf,len);
+  printk("copy_from_user %lu\n",rem);
+  ssize_t written;
+  if(rem){
+    written=len-rem;
+  }else{
+    written=len;
+  }
+  g_buffer_count+=written;
+  //読み込み待ちをしているプロセスに通知(割り込み可能)
+  //wake_up_interruptible(&g_read_wait);
+  wake_up(&g_read_wait);
+  return written;
+}
+
+//バッファ共有　排他なし
+static ssize_t sample_read_shared(struct file *filp,char __user *buf,size_t count,loff_t *f_pos){
+  unsigned long rem;
+  size_t copied,res;
+  int ret=0;
+  printk("%s entered\n",__func__);
+  //実態はマクロ、conditionが0の場合に現在のプロセスを待ちにする
+  //wake_up されるとconditionを判定し、0以外であれば待ちを解除(割り込み可能)
+  //ret=wait_event_interruptible(g_read_wait,buffer_readable());
+  wait_event(g_read_wait,buffer_readable());
   //ret=wait_event_interruptible(g_read_wait,g_buffer_count>0);でもOK
   //シグナル受信した場合
   if(ret<0){
@@ -114,6 +231,7 @@ static ssize_t sample_read(struct file *filp,char __user *buf,size_t count,loff_
   //読み込み可能な最大バイト数
   copied=min(g_buffer_count,count);
   rem=copy_to_user(buf,g_buffer,copied);
+  printk("%s copied\n",__func__);
   if(rem){
     return -EFAULT;
   }
@@ -212,6 +330,7 @@ static int hello_init(struct hello_driver *drv){
     .open    = sample_open,
     .release = sample_close,
     .read    = sample_read,
+    .unlocked_ioctl = sample_ioctl,
     .write   = sample_write,
   };
 
@@ -251,6 +370,12 @@ static int hello_init(struct hello_driver *drv){
     }
     minor_count++;
   }
+
+  /* waitキューの初期化 */
+  init_waitqueue_head(&g_read_wait);
+  /* バッファの初期化 */
+  g_buffer_count = 0;
+
   return 0;
  error:
   for(int i=0;i<minor_count;i++){

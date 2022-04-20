@@ -6,6 +6,7 @@
 #include <linux/cdev.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/uaccess.h>//copy_to_user,copy_from_user
 
 #include <asm/current.h>
 #include <asm/uaccess.h>
@@ -61,8 +62,75 @@ static int sample_close(struct inode *node,struct file *filp){
   }
   return 0;
 }
+#define BUFFER_MAX 32
+static char g_buffer[BUFFER_MAX];
+static size_t g_buffer_count;
+wait_queue_head_t g_read_wait;
+
+//      xxxx
+//MAX       ^
+//count   ^
+static ssize_t sample_write(struct file *filp,const char __user *buf,size_t count,loff_t *f_pos){
+  //書き込める最大バイト数
+  size_t len=min(BUFFER_MAX-g_buffer_count,count);
+  if(len==0){
+    printk("%s:%zu+%zu overflow\n",__func__,g_buffer_count,count);
+    return -ENOSPC;
+  }
+  //g_buffer_countの位置からlenだけ書き込み
+  //戻り値は書き込めなかった残り
+  unsigned long rem = copy_from_user(&g_buffer[g_buffer_count],buf,len);
+  printk("copy_from_user %lu\n",rem);
+  ssize_t written;
+  if(rem){
+    written=len-rem;
+  }else{
+    written=len;
+  }
+  g_buffer_count+=written;
+  //読み込み待ちをしているプロセスに通知
+  wake_up_interruptible(&g_read_wait);
+
+  return written;
+}
+
+static inline bool buffer_readable(void){
+  return (g_buffer_count > 0);
+}
 
 static ssize_t sample_read(struct file *filp,char __user *buf,size_t count,loff_t *f_pos){
+  unsigned long rem;
+  size_t copied,res;
+  int ret;
+
+  //実態はマクロ、conditionが0の場合に現在のプロセスを待ちにする
+  //wake_up されるとconditionを判定し、0以外であれば待ちを解除
+  ret=wait_event_interruptible(g_read_wait,buffer_readable());
+  //ret=wait_event_interruptible(g_read_wait,g_buffer_count>0);でもOK
+  //シグナル受信した場合
+  if(ret<0){
+    return -ERESTARTSYS;
+  }
+  //読み込み可能な最大バイト数
+  copied=min(g_buffer_count,count);
+  rem=copy_to_user(buf,g_buffer,copied);
+  if(rem){
+    return -EFAULT;
+  }
+  //       xxxx
+  //MAX        ^
+  //count    ^
+  //copied  ^
+  res=g_buffer_count-copied;
+  //まだバッファにデータが残っている場合はデータを前方にコピー
+  if(res>0)
+    memmove(&g_buffer[0],&g_buffer[copied],res);
+
+  g_buffer_count=res;
+  return copied;
+}
+//いつ呼び出しても最後にwriteされた値を読む
+static ssize_t sample_read1(struct file *filp,char __user *buf,size_t count,loff_t *f_pos){
        printk("%s entered\n",__func__);
        if(count > NUM_BUFFER )
                count = NUM_BUFFER;
@@ -72,7 +140,7 @@ static ssize_t sample_read(struct file *filp,char __user *buf,size_t count,loff_
        return count;
 }
 
-static ssize_t sample_write(struct file *filp,const char __user *buf,size_t count,loff_t *f_pos){
+static ssize_t sample_write1(struct file *filp,const char __user *buf,size_t count,loff_t *f_pos){
        printk("%s entered\n",__func__);
        if(count > NUM_BUFFER )
                count = NUM_BUFFER;
@@ -156,8 +224,7 @@ static int hello_init(struct hello_driver *drv){
     goto error;
   }
   added=1;
-  // デバイスクラス/デバイス情報(gpio,block,rtc...)を作成(本ドライバは独自クラ
-ス)
+  // デバイスクラス/デバイス情報(gpio,block,rtc...)を作成(本ドライバは独自クラス)
   // 作成したクラスは/sys/classに現れる
   my_class=class_create(THIS_MODULE,CLASS_NAME);
   if(IS_ERR(my_class)){
@@ -225,7 +292,7 @@ static struct hello_driver he_drv={
     .name = MODULE_NAME,
   }
 };
-
+#if 0
 //list of data
 struct scull_qset{
        void** data;
@@ -276,5 +343,5 @@ int scull_open(struct inode *inode,struct file *filp){
 int scull_release(struct inode *inode,struct file *filp){
        return 0;
 }
-
+#endif
 module_driver(he_drv,hello_init,hello_exit);

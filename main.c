@@ -7,10 +7,14 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>//copy_to_user,copy_from_user
+#include <linux/kthread.h>//kthread_work,
+#include <linux/delay.h>//msleep_interruptible
 
 #include <asm/current.h>
 #include <asm/uaccess.h>
 #include "sample.h"
+
+
 
 #define MODULE_NAME "hello_driver"
 
@@ -39,6 +43,16 @@ struct hello_driver {
 struct _mydevice_file_data{
        unsigned char buffer[NUM_BUFFER];
 };
+
+static struct task_struct *thread;
+static struct kthread_worker kworker;
+
+struct sample_work_data {
+  struct kthread_work do_work;
+  void *ptr;
+  size_t count;
+};
+static struct sample_work_data workdata;
 
 static int sample_open(struct inode *node,struct file *filp){
   printk("%s entered\n",__func__);
@@ -88,7 +102,7 @@ static ssize_t sample_write(struct file *filp,const char __user *buf,size_t coun
   //戻り値は書き込めなかった残り
   //unsigned long rem = 0;
   unsigned long rem = copy_from_user(&g_buffer[g_buffer_count],buf,len);
-  printk("copy_from_user %lu\n",rem);
+  printk("%s copy_from_user %lu\n",__func__,rem);
   ssize_t written;
   if(rem){
     written=len-rem;
@@ -98,6 +112,11 @@ static ssize_t sample_write(struct file *filp,const char __user *buf,size_t coun
   g_buffer_count+=written;
   //読み込み待ちをしているプロセスに通知(割り込み可能)
   wake_up_interruptible(&g_read_wait);
+
+  //writeのたびにqueueに追加されるわけではない
+  workdata.ptr=(void*)buf;//ユーザー空間のポインタを渡してもカーネルスレッドからは参照できない(後からcopy_from_userすればOK？ or 非同期なので参照する頃にはデータが残っていない？)
+  workdata.count=count;
+  kthread_queue_work(&kworker,&workdata.do_work);
 
   mutex_unlock(&g_mutex);
   return written;
@@ -209,7 +228,7 @@ static ssize_t sample_write_shared(struct file *filp,const char __user *buf,size
   //戻り値は書き込めなかった残り
   //unsigned long rem = 0;
   unsigned long rem = copy_from_user(&g_buffer[g_buffer_count],buf,len);
-  printk("copy_from_user %lu\n",rem);
+  printk("%s copy_from_user %lu\n",__func__,rem);
   ssize_t written;
   if(rem){
     written=len-rem;
@@ -312,6 +331,36 @@ static char *sample_devnode(struct device *dev,umode_t *mode){
 static struct cdev my_cdev;
 int minor_count=0;
 
+static int dothread(void *arg){
+  printk("Thread start\n");
+
+  for(;;){
+    if(kthread_should_stop()){
+      printk("Thread cnancel\n");
+      break;
+    }
+    msleep_interruptible(1000);
+
+  }
+  printk("Thread end\n");
+  return 0;
+}
+
+static void sample_do_proc(struct kthread_work *ws){
+  struct sample_work_data *wp;
+
+  //kthread_work *wsをsample_work_data.do_workと見做してsample_work_dataのポインタを得る
+  wp=container_of(ws,struct sample_work_data,do_work);
+
+  printk("%s: %px %zu\n",__func__,wp->ptr,wp->count);
+  for(int i=0;i<wp->count;i++)
+    printk("%c",wp->ptr+i);
+  printk("\n");
+  msleep_interruptible(10*1000);
+
+  printk("%s leaved.\n",__func__);
+}
+
 static int hello_init(struct hello_driver *drv){
   int ret;
   int registered=0;
@@ -387,6 +436,19 @@ static int hello_init(struct hello_driver *drv){
   /* バッファの初期化 */
   g_buffer_count = 0;
 
+  int err;
+  kthread_init_worker(&kworker);
+  thread=kthread_run(kthread_worker_fn,&kworker,"samplethread2");
+  //thread = kthread_run(do_thread,&err,"samplethread");
+  if(IS_ERR(thread)){
+    err=PTR_ERR(thread);
+    thread=NULL;
+    printk("unable to create kernel thread %i\n",err);
+    ret=err;
+    goto error;
+  }
+  kthread_init_work(&workdata.do_work,sample_do_proc);
+
   return 0;
  error:
   for(int i=0;i<minor_count;i++){
@@ -410,6 +472,16 @@ static int hello_init(struct hello_driver *drv){
 
 static void hello_exit(struct hello_driver *drv){
   printk(KERN_ALERT "hello driver unloaded\n");
+
+  if(thread){
+    //リストに溜まっていたリクエストを処理
+    kthread_flush_worker(&kworker);
+    kthread_stop(thread);
+  }
+  /* if(thread){ */
+  /*   kthread_stop(thread); */
+  /*  } */
+
   for(int i=0;i<minor_count;i++){
 
     device_destroy(my_class,MKDEV(g_major_num,SAMPLE_MINOR_BASE+i));

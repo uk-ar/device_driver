@@ -9,12 +9,12 @@
 #include <linux/uaccess.h>//copy_to_user,copy_from_user
 #include <linux/kthread.h>//kthread_work,
 #include <linux/delay.h>//msleep_interruptible
+#include <linux/compat.h>//compat_ulong_t
+#include <linux/fs.h>//compat_ptr_ioctl
 
 #include <asm/current.h>
 #include <asm/uaccess.h>
 #include "sample.h"
-
-
 
 #define MODULE_NAME "hello_driver"
 
@@ -390,7 +390,7 @@ static int hello_init(struct hello_driver *drv){
     .release = sample_close,
     .read    = sample_read,
     .unlocked_ioctl = sample_ioctl,
-    //.compat_ioctl = compat_ptr_ioctl,//compat_ptr_ioctlは型を変換してunlocked_ioctlを呼び出す
+    .compat_ioctl = compat_ptr_ioctl,//compat_ptr_ioctlは型を変換してunlocked_ioctlを呼び出す
     .write   = sample_write,
   };
 
@@ -437,6 +437,7 @@ static int hello_init(struct hello_driver *drv){
   g_buffer_count = 0;
 
   int err;
+
   kthread_init_worker(&kworker);
   thread=kthread_run(kthread_worker_fn,&kworker,"samplethread2");
   //thread = kthread_run(do_thread,&err,"samplethread");

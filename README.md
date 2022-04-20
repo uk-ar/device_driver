@@ -1,6 +1,8 @@
 # device_driver
 https://qiita.com/iwatake2222/items/1fdd2e0faaaa868a2db2
+https://github.com/yutakakn/Books/tree/master/DeviceDriverIntroduction/chap3
 
+add sample.h
 ```
 $ sudo insmod hello.ko
 $ ls -la /dev/samplehw*

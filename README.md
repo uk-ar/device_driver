@@ -17,4 +17,7 @@ $ dmesg
 [  517.373561] sample_write entered
 [  517.373562] sample_close entered
 ...
+$ cp /dev/zero /dev/samplehw0
+$ strace ls -l /dev/samplehw0
+$ strace cat main.c > /dev/scull0
 ```

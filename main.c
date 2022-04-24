@@ -11,6 +11,8 @@
 #include <linux/delay.h>//msleep_interruptible
 #include <linux/compat.h>//compat_ulong_t
 #include <linux/fs.h>//compat_ptr_ioctl
+#include <linux/mutex.h>//init_MUTEX?
+#include <linux/semaphore.h>//init_MUTEX
 
 #include <asm/current.h>
 #include <asm/uaccess.h>
@@ -361,7 +363,7 @@ static void sample_do_proc(struct kthread_work *ws){
   printk("%s leaved.\n",__func__);
 }
 
-static int hello_init(struct hello_driver *drv){
+static int hello_init0(struct hello_driver *drv){
   int ret;
   int registered=0;
   int added=0;
@@ -501,33 +503,193 @@ static struct hello_driver he_drv={
     .name = MODULE_NAME,
   }
 };
-#if 0
 //list of data
-struct scull_qset{
+struct scull_qset{//量子セットのノード
        void** data;
        struct scull_qset *next;
 };
 
 struct scull_dev{
-       struct scull_qset *data;
-       int quantum;
-       int qset;
-       unsigned long size;
-       unsigned int access_key;
-       struct semaphore sem;
-       struct cdev cdev;
+  struct scull_qset *data;//先頭の量子セットへのポインタ
+  int quantum;//現在の量子サイズ(量子一つの大きさ)
+  int qset;//現在の量子配列サイズ
+  unsigned long size;//ここに格納されているデータ量(リストの長さ*quantum*qset)
+  unsigned int access_key;//sculluidとscullprivが使用
+  struct mutex sem;//相互排他のセマフォ
+  struct cdev cdev;//キャラクタ型デバイス構造体
 };
-//free list
+int scull_quantum=5;
+int scull_qset=4;
+//free list and its data
 int scull_trim(struct scull_dev *dev){
-       struct scull_qset *next,*dptr;
-       int qset=dev->qset;
-       int i;
-       for(dptr=dev->data;dptr;dptr=next){
-               if(dptr->data){
-
-               }
-       }
+  struct scull_qset *next,*dptr;
+  int qset=dev->qset;//データの配列サイズを取得
+  for(dptr=dev->data;dptr;dptr=next){//リストのノードを回す
+    if(dptr->data){//ノードにデータが存在
+      for(int i=0;i<qset;i++)//データ配列を回す
+        kfree(dptr->data[i]);
+      kfree(dptr->data);
+      dptr->data=NULL;
+    }
+    next=dptr->next;
+    kfree(dptr);
+  }
+  dev->size=0;//格納されているデータ量を0に
+  dev->quantum=scull_quantum;
+  dev->qset=scull_qset;
+  dev->data=NULL;
+  return 0;
 }
+
+int scull_open(struct inode *inode,struct file *filp){
+       struct scull_dev *dev;
+       dev=container_of(inode->i_cdev,struct scull_dev,cdev);//scull_dev->cdevからscull_devを得る
+       filp->private_data=dev;//のちのために保存
+       //書き込み専用オープンならここでデバイス長を0に切り捨て
+       //書き出し前に毎回バッファがクリアされる
+       if((filp->f_flags&O_ACCMODE)==O_WRONLY){
+         if(mutex_lock_interruptible(&dev->sem))
+           return -ERESTARTSYS;
+         scull_trim(dev);
+         mutex_unlock(&dev->sem);
+       }
+       return 0;
+}
+
+struct scull_qset *scull_follow(struct scull_dev *dev, int n)
+{
+	struct scull_qset *qs = dev->data;
+
+        /* Allocate first qset explicitly if need be */
+	if (! qs) {
+		qs = dev->data = kmalloc(sizeof(struct scull_qset), GFP_KERNEL);
+		if (qs == NULL)
+			return NULL;  /* Never mind */
+		memset(qs, 0, sizeof(struct scull_qset));
+	}
+
+	/* Then follow the list */
+	while (n--) {
+		if (!qs->next) {
+			qs->next = kmalloc(sizeof(struct scull_qset), GFP_KERNEL);
+			if (qs->next == NULL)
+				return NULL;  /* Never mind */
+			memset(qs->next, 0, sizeof(struct scull_qset));
+		}
+		qs = qs->next;
+		continue;
+	}
+	return qs;
+}
+ssize_t scull_read(struct file*filp,char __user *buf,size_t count,loff_t *f_pos){
+  struct scull_dev *dev=filp->private_data;
+  struct scull_qset *dptr;//最初のリストアイテム(head?)
+  int quantum=dev->quantum,qset=dev->qset;
+  int itemsize=quantum*qset;//リストアイテムにあるバイト数
+  int item,s_pos,q_pos,rest;
+  ssize_t retval=0;
+  if(mutex_lock_interruptible(&dev->sem))//lock
+    return -ERESTARTSYS;
+  if(*f_pos>=dev->size)
+    goto out;
+  if(*f_pos+count>dev->size)
+    count=dev->size-*f_pos;//格納されているデータ量を超えて読み込みたい場合は、読み込むデータ量を格納されているデータ量まで切り詰める
+
+  //f_posとして読み出し開始位置が渡ってくる
+  //リストアイテムとqsetのインデックスを求め、量子の中でずらす
+  item=(long)*f_pos/itemsize;//リストのインデックス(リストの長さ*quantum*qset/(quantum*qset))
+  rest=(long)*f_pos%itemsize;//リストノードの中でのデータ量(リストの長さ*quantum*qset%(quantum*qset))
+  s_pos=rest/quantum;//リストノードの中でのインデックス(dptr->data[s_pos]:quantum*i/quantum)
+  q_pos=rest%quantum;//quantumより小さいデータの量？
+
+  //正しい位置までリストをたぐる(よそで定義されている)
+  dptr=scull_follow(dev,item);
+
+  if(dptr==NULL||!dptr->data||!dptr->data[s_pos])
+    goto out;//穴を埋めない
+
+  //この量子の終わりまでしか読まない
+  if(count>quantum-q_pos)
+    count=quantum-q_pos;
+
+  if(copy_to_user(buf,dptr->data[s_pos]+q_pos,count)){
+    retval=-EFAULT;
+    goto out;
+  }
+  //f_posとして次回読み出しの開始位置を更新する
+  *f_pos+=count;
+  retval=count;
+
+ out:
+  mutex_unlock(&dev->sem);
+  return retval;
+}
+
+int scull_major=300;
+int scull_minor=0;
+ssize_t scull_write(struct file *filp,const char __user *buf,size_t count,loff_t *f_pos){
+  struct scull_dev *dev=filp->private_data;
+  struct scull_qset *dptr;
+  int quantum=dev->quantum,qset=dev->qset;
+  int itemsize=quantum*qset;
+  int item,s_pos,q_pos,rest;
+  ssize_t retval= -ENOMEM;//値はgoto out文で使う
+
+  if (mutex_lock_interruptible(&dev->sem))
+    return -ERESTARTSYS;
+  //f_posとして書き出し開始位置が渡ってくる
+  //リストアイテムとqsetのインデックスを求め、量子の中でずらす
+  item=(long)*f_pos/itemsize;
+  rest=(long)*f_pos%itemsize;
+  s_pos=rest/quantum;q_pos=rest%quantum;
+
+  //正しい位置までリストをたぐる
+  dptr=scull_follow(dev,item);
+  if(dptr==NULL)
+    goto out;
+  if(!dptr->data){
+    dptr->data=kmalloc(qset*sizeof(char*),GFP_KERNEL);
+    if(!dptr->data)
+      goto out;
+    memset(dptr->data,0,qset*sizeof(char*));
+  }
+  if(!dptr->data[s_pos]){
+    dptr->data[s_pos]=kmalloc(quantum,GFP_KERNEL);
+    if(!dptr->data[s_pos])
+      goto out;
+  }
+  //この量子の終わりまでしか書かない
+  if(count>quantum-q_pos)
+    count=quantum-q_pos;
+  if(copy_from_user(dptr->data[s_pos]+q_pos,buf,count)){
+    retval=-EFAULT;
+    goto out;
+  }
+  *f_pos+=count;
+  retval=count;
+
+  //サイズを更新する
+  if(dev->size<*f_pos){
+    dev->size=*f_pos;
+  }
+ out:
+  mutex_unlock(&dev->sem);
+  return retval;
+}
+
+int scull_release(struct inode *inode,struct file *filp){
+       return 0;
+}
+
+struct file_operations scull_fops={
+  .owner = THIS_MODULE,
+  //.llseek=scull_llseek,
+  .read   = scull_read,
+  .write  = scull_write,
+  //.ioctl=scull_ioctl,
+  .open   = scull_open,
+  .release= scull_release,
+};
 static void scull_setup_cdev(struct scull_dev *dev,int index){
        int err,devno=MKDEV(scull_major,scull_minor+index);
        cdev_init(&dev->cdev,&scull_fops);
@@ -538,19 +700,135 @@ static void scull_setup_cdev(struct scull_dev *dev,int index){
                printk(KERN_NOTICE "Error %d adding scull%d",err,index);
 }
 
-int scull_open(struct inode *inode,struct file *filp){
-       struct scull_dev *dev;
-       dev=container_of(inode->i_cdev,struct scull_dev,cdev);//scull_dev->cdevからscull_devを得る
-       filp->private_data=dev;//のちのために保存
-       //書き込み専用オープンならここでデバイス長を0に切り捨て
-       if((filp->f_flags&O_ACCMODE)==O_WRONLY){
-               scull_trim(dev);
-       }
-       return 0;
+static int hello_init(struct hello_driver *drv){
+  int ret;
+  int registered=0;
+  int added=0;
+  int classed=0;
+
+  dev_t devid;
+
+  printk(KERN_ALERT "hello driver loaded\n");
+  // charactor device
+
+  //キャラクターデバイスの空いているメジャー番号を取得する
+  ret=alloc_chrdev_region(&devid,SAMPLE_MINOR_BASE,SAMPLE_MINOR_COUNT,DEVICE_NAME);
+
+  // 獲得したdev_t(メジャー番号+マイナー番号)からメジャー番号を取り出す
+  g_major_num=MAJOR(devid);
+  scull_major=MAJOR(devid);
+  if(ret){
+    printk("register_chrdev error %d(%pe)\n",ret,ERR_PTR(ret));
+    goto error;
+  }
+  printk("%s:Major number %d was assigned\n",__func__,g_major_num);
+  registered=1;
+
+  /* //各種システムコールに対応するハンドラテーブル */
+  /* static const struct file_operations sample_fops = { */
+  /*   .open    = sample_open, */
+  /*   .release = sample_close, */
+  /*   .read    = sample_read, */
+  /*   .unlocked_ioctl = sample_ioctl, */
+  /*   .compat_ioctl = compat_ptr_ioctl,//compat_ptr_ioctlは型を変換してunlocked_ioctlを呼び出す */
+  /*   .write   = sample_write, */
+  /* }; */
+
+  /* // cdev構造体のコンストラクタでハンドラテーブルの登録 */
+  /* cdev_init(&my_cdev,&sample_fops); */
+  /* // cdev構造体をカーネルに登録する */
+  /* ret=cdev_add(&my_cdev,devid,SAMPLE_MINOR_COUNT); */
+  //scull_setup_cdev(struct scull_dev *dev,int index){
+  int scull_nr_devs=1;
+  int result;
+  struct scull_dev *scull_devices = kmalloc(scull_nr_devs * sizeof(struct scull_dev), GFP_KERNEL);
+  if (!scull_devices) {
+    result = -ENOMEM;
+    goto error;  /* Make this more graceful */
+  }
+  memset(scull_devices, 0, scull_nr_devs * sizeof(struct scull_dev));
+
+  /* Initialize each device. */
+  for (int i = 0; i < scull_nr_devs; i++) {
+    scull_devices[i].quantum = scull_quantum;
+    scull_devices[i].qset = scull_qset;
+    //init_MUTEX(&scull_devices[i].sem);
+    mutex_init(&scull_devices[i].sem);
+    scull_setup_cdev(&scull_devices[i], i);
+  }
+  if(ret<0){
+    printk("cdev_add error %d(%pe)\n",ret,ERR_PTR(ret));
+    goto error;
+  }
+  added=1;
+  // デバイスクラス/デバイス情報(gpio,block,rtc...)を作成(本ドライバは独自クラス)
+  // 作成したクラスは/sys/classに現れる
+  my_class=class_create(THIS_MODULE,CLASS_NAME);
+  if(IS_ERR(my_class)){
+    printk("class_create error (%pe)\n",ERR_CAST(my_class));
+    ret=PTR_ERR(my_class);
+    goto error;
+  }
+
+  //誰でも読み書きできるようにデバイスファイルの所有権を強制する
+  my_class->devnode=sample_devnode;
+  classed=1;
+
+  for(int i=0;i<SAMPLE_MINOR_COUNT;i++){
+    //クラスを指定してデバイスファイルの作成(/dev/samplehw*)
+    my_device=device_create(my_class,NULL,
+                            MKDEV(g_major_num,SAMPLE_MINOR_BASE+i),
+                            NULL,
+                            DEV_FILE"%d",i
+                            );
+    if(IS_ERR(my_device)){
+      printk("device_create error (%pe)\n",ERR_CAST(my_device));
+      ret=PTR_ERR(my_device);
+      goto error;
+    }
+    minor_count++;
+  }
+
+  /* waitキューの初期化 */
+  init_waitqueue_head(&g_read_wait);
+  /* バッファの初期化 */
+  g_buffer_count = 0;
+
+  int err;
+
+  kthread_init_worker(&kworker);
+  thread=kthread_run(kthread_worker_fn,&kworker,"samplethread2");
+  //thread = kthread_run(do_thread,&err,"samplethread");
+  if(IS_ERR(thread)){
+    err=PTR_ERR(thread);
+    thread=NULL;
+    printk("unable to create kernel thread %i\n",err);
+    ret=err;
+    goto error;
+  }
+  kthread_init_work(&workdata.do_work,sample_do_proc);
+
+  return 0;
+ error:
+  for(int i=0;i<minor_count;i++){
+         //デバイスファイルの破棄<->device_create
+    device_destroy(my_class,MKDEV(g_major_num,SAMPLE_MINOR_BASE+i));
+    printk("%s:device_destroy\n",__func__);
+  }
+  if(classed){
+         //デバイスクラスの破棄<->class_create
+    class_destroy(my_class);
+  }
+  if(registered){
+         //キャラクタデバイスの破棄<->cdev_add
+    dev_t dev=MKDEV(g_major_num,SAMPLE_MINOR_BASE);
+    cdev_del(&my_cdev);
+    //キャラクタデバイスの登録解除<->alloc_chrdev_region
+    unregister_chrdev_region(dev,SAMPLE_MINOR_COUNT);
+  }
+  return ret;
 }
 
-int scull_release(struct inode *inode,struct file *filp){
-       return 0;
-}
-#endif
+
 module_driver(he_drv,hello_init,hello_exit);
+//module_driver(he_drv,hello_init,hello_exit);

@@ -677,8 +677,128 @@ ssize_t scull_write(struct file *filp,const char __user *buf,size_t count,loff_t
   return retval;
 }
 
+static DECLARE_WAIT_QUEUE_HEAD(wq);
+static int flag=0;
+
+ssize_t sleepy_read(struct file *filp,char __user *buf,size_t count,loff_t *pos){
+       printk(KERN_DEBUG "procecc %i (%s) goint to sleep\n",current->pid,current->comm);
+       wait_event_interruptible(wq,flag!=0);//競合を起こす可能性あり
+       flag=0;
+       printk(KERN_DEBUG "awoken %i (%s)\n",current->pid,current->comm);
+       return 0;//EOF
+}
+
+ssize_t sleepy_write(struct file *filp,const char __user *buf,size_t count,loff_t *pos){
+       printk(KERN_DEBUG "process %i (%s) awaking the readers...\n",current->pid,current->comm);
+       flag=1;
+       wake_up_interruptible(&wq);
+       return count;//再試行を避けるため、成功を返す
+}
+
 int scull_release(struct inode *inode,struct file *filp){
        return 0;
+}
+
+struct scull_pipe{
+  wait_queue_head_t inq,outq;//読み書きの待ち列
+  char *buffer,*end;//バッファの先頭と末尾
+  int buffersize;//ポインタ演算に使用
+  char *rp,*wp;//読み出し元、書き込み先
+  int nreaders,nwriters;//読み書きごとのオープン回数
+  struct fasync_struct *asyc_queue;//非同期的な読み手
+  struct mutex sem;//相互排他用のミューテックス
+  struct cdev cdev;//キャラクタデバイス構造体
+};
+
+static ssize_t scull_p_read(struct file *filp,char __user *buf,size_t count,loff_t *f_pos){
+       struct scull_pipe *dev=filp->private_data;
+
+       if(mutex_lock_interruptible(&dev->sem))//devを排他
+               return -ERESTARTSYS;
+
+       while(dev->rp == dev->wp){//読むデータがない
+               mutex_unlock(&dev->sem);//ロックを解除。devを開放
+               if(filp->f_flags & O_NONBLOCK)//ノンブロッキング呼び出し
+                       return -EAGAIN;
+               PDEBUG("\"%s\" reading: goint to sleep\n",current->comm);
+               if(wait_event_interruptible(dev->inq,(dev->rp!=dev->wp)))
+                  return -ERESTARTSYS;//シグナル：fs層に依頼を処理
+                //それ以外の場合はループ。ただし、最初は再ロック
+               if(mutex_lock_interruptible(&dev->sem))//devを排他
+                       return -ERESTARTSYS;
+       }
+        //ok　データが来たので返す処理を行う
+        if(dev->wp>dev->rp)
+          count = min(count,(size_t)(dev->wp - dev->rp));
+        else//書き込みポインタがラップ（折り返し？）されたのでデータをdev->endまで返す
+          count = min(count,(size_t)(dev->end - dev->rp));
+
+        if(copy_to_user(buf,dev->rp,count)){
+          mutex_unlock(&dev->sem);
+          return -EFAULT;
+        }
+
+        dev->rp+=count;
+        if(dev->rp==dev->end)
+          dev->rp=dev->buffer;//ラップ(折り返し？)するから、バッファの先頭に戻す
+        mutex_unlock(&dev->sem);
+
+        //最後に書き手を目覚めさせて復帰
+        wake_up_interruptible(&dev->outq);
+        PDEBUG("\"%s\" did read %li bytes\n",current->comm,(long)count);
+        return count;
+}
+
+long int scull_ioctl(struct file *filp,unsigned int cmd,unsigned long arg){
+       int err=0,tmp;
+       int retval=0;
+
+       if(_IOC_TYPE(cmd)!=SCULL_IOC_MAGIC)return -ENOTTY;
+       if(_IOC_NR(cmd)>SCULL_IOC_MAXNR)return -ENOTTY;
+
+       err=!access_ok((void __user *)arg,_IOC_SIZE(cmd));
+       if(err)return -EFAULT;
+
+       switch(cmd){
+       case SCULL_IOCRESET:
+               scull_quantum=SCULL_QUANTUM;
+               scull_qset=SCULL_QSET;
+               break;
+       case SCULL_IOCSQUANTUM:
+               if(! capable(CAP_SYS_ADMIN))
+                       return -EPERM;
+               retval=__get_user(scull_quantum,(int __user *)arg);
+               break;
+       case SCULL_IOCTQUANTUM:
+               if(! capable(CAP_SYS_ADMIN))
+                       return -EPERM;
+               scull_quantum=arg;
+               break;
+       case SCULL_IOCGQUANTUM:
+               retval=__put_user(scull_quantum,(int __user*)arg);
+               break;
+       case SCULL_IOCQQUANTUM:
+               return scull_quantum;
+       case SCULL_IOCXQUANTUM:
+               if(! capable(CAP_SYS_ADMIN))
+                       return -EPERM;
+               tmp=scull_quantum;
+               retval=__get_user(scull_quantum,(int __user*)arg);
+               if(retval==0)
+                       retval=__put_user(tmp,(int __user*)arg);
+               break;
+       case SCULL_IOCHQUANTUM:
+               if(! capable(CAP_SYS_ADMIN))
+                       return -EPERM;
+               tmp=scull_quantum;
+               scull_quantum=arg;
+               return tmp;
+       default://蛇足すでにcmdはMAXNRで照合されている
+               return -ENOTTY;
+
+       }
+       return retval;
+
 }
 
 struct file_operations scull_fops={
@@ -686,7 +806,7 @@ struct file_operations scull_fops={
   //.llseek=scull_llseek,
   .read   = scull_read,
   .write  = scull_write,
-  //.ioctl=scull_ioctl,
+  .unlocked_ioctl=scull_ioctl,
   .open   = scull_open,
   .release= scull_release,
 };

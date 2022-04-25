@@ -1,9 +1,14 @@
 CFILES = main.c sub.c
 
+DEBUG=y
+
 obj-m := hello.o
 hello-objs :=$(CFILES:.c=.o)
-
-ccflags-y += -std=gnu99 -Wall -Wno-declaration-after-statement
+ifeq ($(DEBUG),y)
+  ccflags-y += -std=gnu99 -DSCULL_DEBUG -Wall -Wno-declaration-after-statement
+else
+  ccflags-y += -std=gnu99 -Wall -Wno-declaration-after-statement
+endif
 
 ARM_ARCH := ARCH=arm64
 ARM_CC := CROSS_COMPILE=aarch64-buildroot-linux-uclibc-

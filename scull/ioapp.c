@@ -18,7 +18,7 @@ int main(void){
        int val;
        ret = ioctl(fd0_A,READCMD,&val);
        if(ret){
-         printf("READCMD: ioctl error:%d\n",ret);//expected error
+         printf("READCMD: ioctl error:%zd\n",ret);//expected error
        }else{
          printf("READCMD: ioctl val:0x%x\n",val);
        }
@@ -26,7 +26,7 @@ int main(void){
        int quantum=100;
        ret = ioctl(fd0_A,SCULL_IOCSQUANTUM,&quantum);//ポインタで設定
        if(ret){
-         printf("SCULL_IOCSQUANTUM: ioctl error:%d\n",ret);
+         printf("SCULL_IOCSQUANTUM: ioctl error:%zd\n",ret);
        }else{
          printf("SCULL_IOCSQUANTUM: ioctl success:\n");
        }
@@ -39,7 +39,7 @@ int main(void){
 
        ret = ioctl(fd0_A,SCULL_IOCGQUANTUM,&quantum);//ポインタで取得
        if(ret){
-         printf("SCULL_IOCGQUANTUM: ioctl error:%d\n",ret);
+         printf("SCULL_IOCGQUANTUM: ioctl error:%zd\n",ret);
        }else{
          printf("SCULL_IOCGQUANTUM: ioctl success:\n");
        }
@@ -50,12 +50,17 @@ int main(void){
 
        quantum=1000;
        ret=ioctl(fd0_A,SCULL_IOCXQUANTUM,&quantum);//ポインタで交換
-       printf("SCULL_IOCXQUANTUM:%d->%d\n",ret,quantum);
+       printf("SCULL_IOCXQUANTUM:old:%d\n",quantum);
+       if(ret){
+         printf("SCULL_IOCXQUANTUM: ioctl error:%zd\n",ret);
+       }else{
+         printf("SCULL_IOCXQUANTUM: ioctl success:\n");
+       }
        printf("quantum:%d\n",ioctl(fd0_A,SCULL_IOCQQUANTUM));
 
        quantum=1001;
        quantum=ioctl(fd0_A,SCULL_IOCHQUANTUM,quantum);//戻り値で交換
-       printf("SCULL_IOCHQUANTUM:%d\n",quantum);
+       printf("SCULL_IOCHQUANTUM:old:%d\n",quantum);
        printf("quantum:%d\n",ioctl(fd0_A,SCULL_IOCQQUANTUM));
 
        if(close(fd0_A)!=0)

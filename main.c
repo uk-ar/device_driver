@@ -32,6 +32,8 @@ static struct class *my_class;
 static struct device *my_device;
 
 static int g_major_num;
+#define SAMPLE_MINOR_BASE 0
+#define SAMPLE_MINOR_COUNT 3
 
 #define NUM_BUFFER 256
 struct _mydevice_file_data{
@@ -493,7 +495,7 @@ static struct hello_driver he_drv={
   }
 };
 
-extern int hello_init(struct hello_driver *drv);
-
-module_driver(he_drv,hello_init0,hello_exit);
+extern int scull_init(struct hello_driver *drv);
+extern void scull_exit(struct hello_driver *drv);
+module_driver(he_drv,scull_init,scull_exit);
 //module_driver(he_drv,hello_init,hello_exit);

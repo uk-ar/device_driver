@@ -1,13 +1,12 @@
 #ifndef _SAMPLE_H_
 #define _SAMPLE_H_
 
+#include <linux/fs.h>//compat_ptr_ioctl
+
 #define DEVICE_NAME "devsample"
 
 #define DEV_FILE "samplehw"
 #define CLASS_NAME "sample"
-
-#define SAMPLE_MINOR_BASE 0
-#define SAMPLE_MINOR_COUNT 3
 
 #define SAMPLE_IOCTL 's'
 

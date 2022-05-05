@@ -25,10 +25,10 @@ struct hello_driver {
 static struct class *my_class;
 static struct device *my_device;
 
-static int g_major_num;
+//static int g_major_num;
 
 // キャラクタデバイスオブジェクト
-static struct cdev my_cdev;
+//static struct cdev my_cdev;
 static int minor_count=0;
 
 extern char *sample_devnode(struct device *dev,umode_t *mode);
@@ -155,8 +155,8 @@ ssize_t scull_read(struct file*filp,char __user *buf,size_t count,loff_t *f_pos)
   return retval;
 }
 
-int scull_major=300;
-int scull_minor=0;
+int scull_major=0;
+#define SCULL_MINOR 0
 ssize_t scull_write(struct file *filp,const char __user *buf,size_t count,loff_t *f_pos){
   struct scull_dev *dev=filp->private_data;
   struct scull_qset *dptr;
@@ -282,6 +282,7 @@ static ssize_t scull_p_read(struct file *filp,char __user *buf,size_t count,loff
 long int scull_ioctl(struct file *filp,unsigned int cmd,unsigned long arg){
        int err=0,tmp;
        int retval=0;
+       printk("%s:\n",__func__);
 
        if(_IOC_TYPE(cmd)!=SCULL_IOC_MAGIC)return -ENOTTY;
        if(_IOC_NR(cmd)>SCULL_IOC_MAXNR)return -ENOTTY;
@@ -341,7 +342,7 @@ struct file_operations scull_fops={
   .release= scull_release,
 };
 static void scull_setup_cdev(struct scull_dev *dev,int index){
-       int err,devno=MKDEV(scull_major,scull_minor+index);
+       int err,devno=MKDEV(scull_major,SCULL_MINOR+index);
        cdev_init(&dev->cdev,&scull_fops);
        dev->cdev.owner=THIS_MODULE;
        dev->cdev.ops=&scull_fops;
@@ -349,8 +350,9 @@ static void scull_setup_cdev(struct scull_dev *dev,int index){
        if(err)
                printk(KERN_NOTICE "Error %d adding scull%d",err,index);
 }
-
-int hello_init(struct hello_driver *drv){
+int scull_nr_devs=1;
+struct scull_dev *scull_devices;
+int scull_init(struct hello_driver *drv){
   int ret;
   int registered=0;
   int added=0;
@@ -358,20 +360,21 @@ int hello_init(struct hello_driver *drv){
 
   dev_t devid;
 
+
   printk(KERN_ALERT "hello driver loaded\n");
   // charactor device
 
   //キャラクターデバイスの空いているメジャー番号を取得する
-  ret=alloc_chrdev_region(&devid,SAMPLE_MINOR_BASE,SAMPLE_MINOR_COUNT,DEVICE_NAME);
+  ret=alloc_chrdev_region(&devid,SCULL_MINOR,scull_nr_devs,DEVICE_NAME);
 
   // 獲得したdev_t(メジャー番号+マイナー番号)からメジャー番号を取り出す
-  g_major_num=MAJOR(devid);
+  //g_major_num=MAJOR(devid);
   scull_major=MAJOR(devid);
   if(ret){
     printk("register_chrdev error %d(%pe)\n",ret,ERR_PTR(ret));
     goto error;
   }
-  printk("%s:Major number %d was assigned\n",__func__,g_major_num);
+  printk("%s:Major number %d was assigned\n",__func__,scull_major);
   registered=1;
 
   /* //各種システムコールに対応するハンドラテーブル */
@@ -389,9 +392,9 @@ int hello_init(struct hello_driver *drv){
   /* // cdev構造体をカーネルに登録する */
   /* ret=cdev_add(&my_cdev,devid,SAMPLE_MINOR_COUNT); */
   //scull_setup_cdev(struct scull_dev *dev,int index){
-  int scull_nr_devs=1;
+
   int result;
-  struct scull_dev *scull_devices = kmalloc(scull_nr_devs * sizeof(struct scull_dev), GFP_KERNEL);
+  scull_devices = kmalloc(scull_nr_devs * sizeof(struct scull_dev), GFP_KERNEL);
   if (!scull_devices) {
     result = -ENOMEM;
     goto error;  /* Make this more graceful */
@@ -424,10 +427,10 @@ int hello_init(struct hello_driver *drv){
   my_class->devnode=sample_devnode;
   classed=1;
 
-  for(int i=0;i<SAMPLE_MINOR_COUNT;i++){
+  for(int i=0;i<scull_nr_devs;i++){
     //クラスを指定してデバイスファイルの作成(/dev/samplehw*)
     my_device=device_create(my_class,NULL,
-                            MKDEV(g_major_num,SAMPLE_MINOR_BASE+i),
+                            MKDEV(scull_major,SCULL_MINOR+i),
                             NULL,
                             DEV_FILE"%d",i
                             );
@@ -445,7 +448,7 @@ int hello_init(struct hello_driver *drv){
  error:
   for(int i=0;i<minor_count;i++){
          //デバイスファイルの破棄<->device_create
-    device_destroy(my_class,MKDEV(g_major_num,SAMPLE_MINOR_BASE+i));
+    device_destroy(my_class,MKDEV(scull_major,SCULL_MINOR+i));
     printk("%s:device_destroy\n",__func__);
   }
   if(classed){
@@ -453,11 +456,30 @@ int hello_init(struct hello_driver *drv){
     class_destroy(my_class);
   }
   if(registered){
-         //キャラクタデバイスの破棄<->cdev_add
-    dev_t dev=MKDEV(g_major_num,SAMPLE_MINOR_BASE);
-    cdev_del(&my_cdev);
+    //キャラクタデバイスの破棄<->cdev_add
+    for(int i=0;i<minor_count;i++){
+      cdev_del(&scull_devices[i].cdev);
+    }
     //キャラクタデバイスの登録解除<->alloc_chrdev_region
-    unregister_chrdev_region(dev,SAMPLE_MINOR_COUNT);
+    dev_t dev=MKDEV(scull_major,SCULL_MINOR);
+    unregister_chrdev_region(dev,scull_nr_devs);
   }
   return ret;
+}
+
+void scull_exit(struct hello_driver *drv){
+  printk(KERN_ALERT "hello driver unloaded\n");
+
+  //for(int i=0;i<minor_count;i++){
+  for (int i = 0; i < scull_nr_devs; i++) {
+    device_destroy(my_class,MKDEV(scull_major,SCULL_MINOR+i));
+    printk("%s:device_destroy\n",__func__);
+  }
+
+  class_destroy(my_class);
+  for(int i=0;i<minor_count;i++){
+      cdev_del(&scull_devices[i].cdev);
+    }
+  dev_t dev=MKDEV(scull_major,SCULL_MINOR);
+  unregister_chrdev_region(dev,scull_nr_devs);
 }

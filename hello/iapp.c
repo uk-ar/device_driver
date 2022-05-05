@@ -4,7 +4,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include "sample.h"
+#include "../sample.h"
 
 #include <sys/ioctl.h>//ioctl
 

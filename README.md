@@ -19,5 +19,6 @@ $ dmesg
 ...
 $ cp /dev/zero /dev/samplehw0
 $ strace ls -l /dev/samplehw0
-$ strace cat main.c > /dev/scull0
+$ strace cat main.c > /dev/samplehw0
+$ strace cat < /dev/samplehw0
 ```

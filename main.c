@@ -24,6 +24,10 @@ MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("This is a hello driver");
 MODULE_AUTHOR("Yuuki Arisawa");
 
+struct hello_driver {
+  struct device_driver driver;
+};
+
 static struct class *my_class;
 static struct device *my_device;
 
@@ -491,5 +495,5 @@ static struct hello_driver he_drv={
 
 extern int hello_init(struct hello_driver *drv);
 
-module_driver(he_drv,hello_init,hello_exit);
+module_driver(he_drv,hello_init0,hello_exit);
 //module_driver(he_drv,hello_init,hello_exit);

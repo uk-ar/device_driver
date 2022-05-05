@@ -1,10 +1,6 @@
 #ifndef _SAMPLE_H_
 #define _SAMPLE_H_
 
-struct hello_driver {
-  struct device_driver driver;
-};
-
 #define DEVICE_NAME "devsample"
 
 #define DEV_FILE "samplehw"

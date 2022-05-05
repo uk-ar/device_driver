@@ -18,6 +18,10 @@
 #include <asm/uaccess.h>
 #include "sample.h"
 
+struct hello_driver {
+  struct device_driver driver;
+};
+
 static struct class *my_class;
 static struct device *my_device;
 

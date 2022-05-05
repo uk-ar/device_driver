@@ -13,9 +13,10 @@
 #include <linux/fs.h>//compat_ptr_ioctl
 #include <linux/mutex.h>//init_MUTEX?
 #include <linux/semaphore.h>//init_MUTEX
+//#include <linux/sched/signal.h>//signal_pending
 
 #include <asm/current.h>
-#include <asm/uaccess.h>
+#include <asm/uaccess.h>//access_ok?
 #include "sample.h"
 
 #define MODULE_NAME "hello_driver"

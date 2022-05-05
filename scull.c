@@ -284,47 +284,75 @@ long int scull_ioctl(struct file *filp,unsigned int cmd,unsigned long arg){
        int retval=0;
        printk("%s:\n",__func__);
 
-       if(_IOC_TYPE(cmd)!=SCULL_IOC_MAGIC)return -ENOTTY;
-       if(_IOC_NR(cmd)>SCULL_IOC_MAXNR)return -ENOTTY;
+       /* if(_IOC_TYPE(cmd)!=SCULL_IOC_MAGIC){ */
+       printk("%s:cmd:%d\n",__func__,cmd);
+       printk("%s:DIR:%d\n",__func__,_IOC_DIR(cmd));
+       printk("%s:TYPE:%d\n",__func__,_IOC_TYPE(cmd));
+       printk("%s:NR:%d\n",__func__,_IOC_NR(cmd));
+       printk("%s:SIZE:%d\n",__func__,_IOC_SIZE(cmd));
+       /*   return -ENOTTY; */
+       /* } */
+       /* if(_IOC_NR(cmd)>SCULL_IOC_MAXNR){ */
+       /*   printk("%s:SCULL_IOC_MAXNR\n",__func__); */
+       /*   return -ENOTTY; */
+       /* } */
 
-       err=!access_ok((void __user *)arg,_IOC_SIZE(cmd));
-       if(err)return -EFAULT;
+       /* err=!access_ok((void __user *)arg,_IOC_SIZE(cmd)); */
+       /* if(err){ */
+       /*   printk("%s:access_ok\n",__func__); */
+       /*   return -EFAULT; */
+       /* } */
+       printk("%s:cmd?:%u\n",__func__,SCULL_IOCRESET);
+       printk("%s:cmd?:%u\n",__func__,SCULL_IOCSQUANTUM);
+       //printk("%s:cmd?:%u\n",__func__,SCULL_IOCTQUANTUM);
+       printk("%s:cmd?:%u\n",__func__,SCULL_IOCGQUANTUM);
+       //printk("%s:cmd?:%u\n",__func__,SCULL_IOCQQUANTUM);
+       printk("%s:cmd?:%u\n",__func__,SCULL_IOCXQUANTUM);
+       //printk("%s:cmd?:%u\n",__func__,SCULL_IOCHQUANTUM);
 
        switch(cmd){
        case SCULL_IOCRESET:
                scull_quantum=SCULL_QUANTUM;
                scull_qset=SCULL_QSET;
+               printk("%s:SCULL_IOCRESET\n",__func__);
                break;
        case SCULL_IOCSQUANTUM:
-               if(! capable(CAP_SYS_ADMIN))
-                       return -EPERM;
+               /* if(! capable(CAP_SYS_ADMIN)) */
+               /*         return -EPERM; */
                retval=__get_user(scull_quantum,(int __user *)arg);
+               printk("%s:SCULL_IOCSQUANTUM:%d\n",__func__,scull_quantum);
                break;
-       case SCULL_IOCTQUANTUM:
-               if(! capable(CAP_SYS_ADMIN))
-                       return -EPERM;
-               scull_quantum=arg;
-               break;
+       /* case SCULL_IOCTQUANTUM: */
+       /*         /\* if(! capable(CAP_SYS_ADMIN)) *\/ */
+       /*         /\*         return -EPERM; *\/ */
+       /*         scull_quantum=arg; */
+       /*         printk("%s:SCULL_IOCTQUANTUM:%d\n",__func__,scull_quantum); */
+       /*         break; */
        case SCULL_IOCGQUANTUM:
                retval=__put_user(scull_quantum,(int __user*)arg);
+               printk("%s:SCULL_IOCGQUANTUM:%d\n",__func__,scull_quantum);
                break;
-       case SCULL_IOCQQUANTUM:
-               return scull_quantum;
+       /* case SCULL_IOCQQUANTUM: */
+       /*   printk("%s:SCULL_IOCQQUANTUM:%d\n",__func__,scull_quantum); */
+       /*   return scull_quantum; */
        case SCULL_IOCXQUANTUM:
-               if(! capable(CAP_SYS_ADMIN))
-                       return -EPERM;
+               /* if(! capable(CAP_SYS_ADMIN)) */
+               /*         return -EPERM; */
                tmp=scull_quantum;
                retval=__get_user(scull_quantum,(int __user*)arg);
                if(retval==0)
                        retval=__put_user(tmp,(int __user*)arg);
+               printk("%s:SCULL_IOCXQUANTUM:%d\n",__func__,scull_quantum);
                break;
-       case SCULL_IOCHQUANTUM:
-               if(! capable(CAP_SYS_ADMIN))
-                       return -EPERM;
-               tmp=scull_quantum;
-               scull_quantum=arg;
-               return tmp;
+       /* case SCULL_IOCHQUANTUM: */
+       /*         /\* if(! capable(CAP_SYS_ADMIN)) *\/ */
+       /*         /\*         return -EPERM; *\/ */
+       /*         tmp=scull_quantum; */
+       /*         scull_quantum=arg; */
+       /*         printk("%s:SCULL_IOCHQUANTUM:%d\n",__func__,scull_quantum); */
+       /*         return tmp; */
        default://蛇足すでにcmdはMAXNRで照合されている
+               printk("%s:default:%d\n",__func__);
                return -ENOTTY;
 
        }

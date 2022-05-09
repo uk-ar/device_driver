@@ -2,7 +2,9 @@
 https://qiita.com/iwatake2222/items/1fdd2e0faaaa868a2db2
 https://github.com/yutakakn/Books/tree/master/DeviceDriverIntroduction/chap3
 https://resources.oreilly.com/examples/9780596005900
-add sample.h
+https://github.com/torvalds/linux/blob/master/drivers/rtc/rtc-efi.c
+https://linuxjf.osdn.jp/JFdocs/The-Linux-Kernel.html#toc9
+https://www.kernel.org/doc/html/v5.17/dev-tools/kunit/start.html#installing-dependencies
 ```
 $ sudo insmod hello.ko
 $ ls -la /dev/samplehw*
@@ -21,4 +23,12 @@ $ cp /dev/zero /dev/samplehw0
 $ strace ls -l /dev/samplehw0
 $ strace cat main.c > /dev/samplehw0
 $ strace cat < /dev/samplehw0
+```
+
+```
+> dmesg|grep rtc
+rtc-efi rtc-efi: registered as rtc0
+> sudo cat /proc/iomem
+> cat /proc/interrupts
+linux-menuconfig arm amba pl031 rtc
 ```

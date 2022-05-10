@@ -1,4 +1,4 @@
-CFILES = main.c sub.c scull.c fifo.c
+CFILES = main.c sub.c scull/scull.c fifo.c
 
 DEBUG=y
 

@@ -16,7 +16,7 @@
 
 #include <asm/current.h>
 #include <asm/uaccess.h>
-#include "sample.h"
+#include "../sample.h"
 
 struct hello_driver {
   struct device_driver driver;

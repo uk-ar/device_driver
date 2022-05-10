@@ -5,6 +5,7 @@ https://resources.oreilly.com/examples/9780596005900
 https://github.com/torvalds/linux/blob/master/drivers/rtc/rtc-efi.c
 https://linuxjf.osdn.jp/JFdocs/The-Linux-Kernel.html#toc9
 https://www.kernel.org/doc/html/v5.17/dev-tools/kunit/start.html#installing-dependencies
+https://www.hiroom2.com/2014/02/03/miscdevice%E3%81%A7linux%E3%83%87%E3%83%90%E3%82%A4%E3%82%B9%E3%83%89%E3%83%A9%E3%82%A4%E3%83%90%E3%82%92%E4%BD%9C%E6%88%90%E3%81%99%E3%82%8B/
 ```
 $ sudo insmod hello.ko
 $ ls -la /dev/samplehw*

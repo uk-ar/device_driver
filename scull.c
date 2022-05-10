@@ -25,10 +25,7 @@ struct hello_driver {
 static struct class *my_class;
 static struct device *my_device;
 
-//static int g_major_num;
-
 // キャラクタデバイスオブジェクト
-//static struct cdev my_cdev;
 static int minor_count=0;
 
 extern char *sample_devnode(struct device *dev,umode_t *mode);
@@ -350,7 +347,7 @@ long int scull_ioctl(struct file *filp,unsigned int cmd,unsigned long arg){
                printk("%s:SCULL_IOCHQUANTUM:%d\n",__func__,scull_quantum);
                return tmp;
        default://蛇足すでにcmdはMAXNRで照合されている
-               printk("%s:default:%d\n",__func__);
+               printk("%s:default\n",__func__);
                return -ENOTTY;
 
        }
@@ -467,8 +464,6 @@ int scull_init(struct hello_driver *drv){
     }
     minor_count++;
   }
-
-  int err;
 
   return 0;
  error:

@@ -496,7 +496,10 @@ static struct hello_driver he_drv={
   }
 };
 
-extern int scull_init(struct hello_driver *drv);
-extern void scull_exit(struct hello_driver *drv);
-module_driver(he_drv,scull_init,scull_exit);
+/* extern int scull_init(struct hello_driver *drv); */
+/* extern void scull_exit(struct hello_driver *drv); */
+/* module_driver(he_drv,scull_init,scull_exit); */
+extern int fifo_init(struct hello_driver *drv);
+extern void fifo_exit(struct hello_driver *drv);
+module_driver(he_drv,fifo_init,fifo_exit);
 //module_driver(he_drv,hello_init,hello_exit);

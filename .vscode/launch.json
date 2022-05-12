@@ -5,7 +5,7 @@
       "name": "(gdb) 起動",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/fifo_test",
+      "program": "${workspaceFolder}/sort",
       "args": [],
       "stopAtEntry": false,
       "cwd": "${fileDirname}",

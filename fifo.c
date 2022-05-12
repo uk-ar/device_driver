@@ -155,7 +155,7 @@ ssize_t fifo_write(struct file *filp,const char __user *buf,size_t count,loff_t 
   struct fifo_dev *dev=filp->private_data;
   ssize_t retval= -ENOMEM;//値はgoto out文で使う
 
-  printk(KERN_NOTICE "%s:",__func__);
+  printk(KERN_NOTICE "%s:\n",__func__);
   if (mutex_lock_interruptible(&dev->sem))
     return -ERESTARTSYS;
 
@@ -168,28 +168,31 @@ ssize_t fifo_write(struct file *filp,const char __user *buf,size_t count,loff_t 
          printk(KERN_NOTICE "%s:no memory\n",__func__);
          goto out;
   }
-  printk(KERN_NOTICE "%s:[2]:%ld:%d\n",__func__,count,dev->node_size-rest);
+  printk(KERN_NOTICE "%s:[2]:%ld:%d:%px\n",__func__,count,dev->node_size-rest,cur);
   //この量子の終わりまでしか書かない
   if(count> dev->node_size-rest )
          count=dev->node_size-rest;
 
-  /* if(copy_from_user(cur->data+rest,buf,count)){ */
-       /*   printk(KERN_NOTICE "%s:copy error\n",__func__); */
-  /*   retval=-EFAULT; */
-  /*   goto out; */
-  /* } */
+  printk(KERN_NOTICE "%s:[3]:%d:%ld\n",__func__,rest,count);
+
+  /*if(copy_from_user(cur->data+rest,buf+*f_pos,count)){
+    printk(KERN_NOTICE "%s:copy error\n",__func__);
+    retval=-EFAULT;
+    goto out;
+  }*/
+  printk(KERN_NOTICE "%s:[4]:copied:%d:%ld\n",__func__,rest,count);
 
   *f_pos+=count;
   retval=count;
-  /* for(int i=0;i<count;i++){ */
-       /*   printk(KERN_NOTICE "%s:%c\n",__func__,*(cur->data+rest+i)); */
-  /* } */
+  for(int i=0;i<count;i++){
+         printk(KERN_NOTICE "%s:%c\n",__func__,*(cur->data+rest+i));
+  }
   /* printk(KERN_NOTICE "%s:%px:%c:%lld:%zd\n",__func__,cur,*(cur->data+rest),*f_pos,retval); */
 
   // サイズを更新する(いつも更新するわけではないのはseekするから？)
-  /* if(dev->size<*f_pos){ */
-  /*   dev->size=*f_pos; */
-  /* } */
+  if(dev->size<*f_pos){
+    dev->size=*f_pos;
+  }
  out:
   mutex_unlock(&dev->sem);
   return retval;

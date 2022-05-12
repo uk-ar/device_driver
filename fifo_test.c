@@ -22,7 +22,7 @@
 #include <asm/uaccess.h>
 #else
 struct inode{
-
+  int dummy;
 };
 #define container_of(ptr, type, member) ({                      \
         const typeof( ((type *)0)->member ) *__mptr = (ptr);
@@ -46,10 +46,16 @@ struct file {
 #include <stdlib.h>
 #define kmalloc(arg1,arg2) malloc(arg1)
 #define mutex_lock_interruptible(arg) (0)
-#define copy_to_user(arg1,arg2,arg3) (1)
+#define copy_to_user(dst,src,size) memcpy(dst,src,size),0
 #define mutex_unlock(arg) (0)
 #include <string.h>
 #define copy_from_user(dst,src,size) memcpy(dst,src,size),0
+
+#include <stddef.h>
+#define container_of(ptr, type, member) ({                  \
+    const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
+    (type *)( (char *)__mptr - offsetof(type,member) );})
+
 #endif
 struct fifo_dev {
   struct fifo_node *head;//先頭の量子セットへのポインタ
@@ -102,7 +108,7 @@ struct fifo_node *fifo_follow(struct fifo_dev *dev, int node_index)// n is index
 int fifo_open(struct inode *inode,struct file *filp){
   struct fifo_dev *dev;
   dev=filp->private_data;
-       //dev=container_of(inode->i_cdev,struct fifo_dev,cdev);//fifo_dev->cdevからfifo_devを得る
+  //dev=container_of(inode->i_cdev,struct fifo_dev,cdev);//fifo_dev->cdevからfifo_devを得る
        printk(KERN_NOTICE "%s:%d\n",__func__,dev->node_size);
        //filp->private_data=dev;//のちのために保存
        /* if((filp->f_flags&O_ACCMODE)==O_WRONLY){ */
@@ -128,9 +134,10 @@ ssize_t fifo_read(struct file*filp,char __user *buf,size_t count,loff_t *f_pos){
   int node_index = *f_pos/dev->node_size;
   int rest  = *f_pos%dev->node_size;
 
+  if(count>dev->node_size-rest)
+    count=dev->node_size-rest;
   printk(KERN_NOTICE "%s:%px:head\n",__func__,dev->head);
   struct fifo_node *cur=fifo_follow(dev,node_index);
-  printk(KERN_NOTICE "%s:%c",__func__,*(cur->data));
   if(!cur || !cur->data)
          goto out;
 
@@ -138,7 +145,9 @@ ssize_t fifo_read(struct file*filp,char __user *buf,size_t count,loff_t *f_pos){
          retval=-EFAULT;
          goto out;
   }
-
+  for(int i=0;i<count;i++){
+         printk(KERN_NOTICE "%s:%c\n",__func__,*(cur->data+rest+i));
+  }
   printk(KERN_NOTICE "%s:%px:%c:%lld:%d:%d\n",__func__,cur,*(cur->data+rest),*f_pos,node_index,rest);
 
   *f_pos+=count;
@@ -171,9 +180,9 @@ ssize_t fifo_write(struct file *filp,const char __user *buf,size_t count,loff_t 
   if(count> dev->node_size-rest )
          count=dev->node_size-rest;
 
-  printk(KERN_NOTICE "%s:[3]:%d:%d\n",__func__,rest,count);
+  printk(KERN_NOTICE "%s:[3]:%d:%ld\n",__func__,rest,count);
 
-  if(copy_from_user(cur->data+rest,buf,count)){
+  if(copy_from_user(cur->data+rest,buf+*f_pos,count)){
     printk(KERN_NOTICE "%s:copy error\n",__func__);
     retval=-EFAULT;
     goto out;
@@ -188,16 +197,16 @@ ssize_t fifo_write(struct file *filp,const char __user *buf,size_t count,loff_t 
   /* printk(KERN_NOTICE "%s:%px:%c:%lld:%zd\n",__func__,cur,*(cur->data+rest),*f_pos,retval); */
 
   // サイズを更新する(いつも更新するわけではないのはseekするから？)
-  /* if(dev->size<*f_pos){ */
-  /*   dev->size=*f_pos; */
-  /* } */
+  if(dev->size<*f_pos){
+    dev->size=*f_pos;
+  }
  out:
   mutex_unlock(&dev->sem);
   return retval;
 }
 
 int fifo_release(struct inode *inode,struct file *filp){
-  printk("%s:",__func__);
+  printk("%s:\n",__func__);
   return 0;
 }
 
@@ -206,11 +215,12 @@ int main(int argc,char** argv){
   struct inode inode={0};
   struct file filp={0};
   struct fifo_dev dev={0};
+  {
   dev.node_size=10;
   filp.private_data=&dev;
   fifo_open(&inode,&filp);
   //(struct file *filp,const char __user *buf,size_t count,loff_t *f_pos){
-  char buf[]="12345678901234";
+  char buf[]="1234567890abcd";
   loff_t p=0;
   int total=15;
   int r=fifo_write(&filp,buf,total,&p);
@@ -220,5 +230,20 @@ int main(int argc,char** argv){
     r=fifo_write(&filp,buf,total,&p);
     total-=r;
   }
-  fifo_release(&inode,&filp);
+  }
+
+  {
+  dev.node_size=10;
+  filp.private_data=&dev;
+  fifo_open(&inode,&filp);
+  loff_t p=0;
+  int total=15;
+  char buf[20];
+  int r=fifo_read(&filp,buf,total,&p);
+  printf("%d:\n",r);
+  while(r){
+    r=fifo_read(&filp,buf,total,&p);
+  }
+  }
+  //fifo_release(&inode,&filp);
 }

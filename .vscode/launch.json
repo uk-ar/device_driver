@@ -2,10 +2,36 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "(gdb) 起動",
+      "name": "kernel-debug",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/sort",
+      "miDebuggerServerAddress": "127.0.0.1:1234",
+      "program": "/usr/src/linux-5.11.0/vmlinux",
+      "program": "/usr/src/linux-5.11.0/vmlinux",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${fileDirname}",
+      "environment": [],
+      "externalConsole": false,
+      "logging": {
+        "engineLogging": false
+      },
+      "MIMode": "gdb",
+      "setupCommands": [
+          {
+              "description": "gdb の再フォーマットを有効にする",
+              "text": "-enable-pretty-printing",
+              "ignoreFailures": true
+          }
+          
+      ]
+    },
+    
+    {
+      "name": "fifo_test",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/fifo_test",
       "args": [],
       "stopAtEntry": false,
       "cwd": "${fileDirname}",

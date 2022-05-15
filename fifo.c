@@ -235,7 +235,7 @@ int fifo_init(struct fifo_driver *drv){
   dev_t devid;
 
 
-  printk(KERN_ALERT "fifo driver loaded\n");
+  printk(KERN_ALERT "fifo driver loaded2\n");
 
   //キャラクターデバイスの空いているメジャー番号を取得する
   ret=alloc_chrdev_region(&devid,FIFO_MINOR,fifo_nr_devs,DEVICE_NAME);

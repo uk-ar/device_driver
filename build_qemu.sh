@@ -1,0 +1,1 @@
+make -C "../buildroot-2022.02.1" BR2_EXTERNAL="$(pwd)/." qemu_aarch64_virt_defconfig hello_defconfig && make -C "../buildroot-2022.02.1" BR2_JLEVEL="$(nproc)" device_driver-rebuild all

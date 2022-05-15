@@ -1,0 +1,5 @@
+config BR2_PACKAGE_DEVICE_DRIVER
+        bool "device_driver"
+        depends on BR2_LINUX_KERNEL
+        help
+                Hello Linux Kernel Module.

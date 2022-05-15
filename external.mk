@@ -1,0 +1,5 @@
+DEVICE_DRIVER_VERSION = 1.0
+DEVICE_DRIVER_SITE = $(BR2_EXTERNAL_DEVICE_DRIVER_PATH)
+DEVICE_DRIVER_SITE_METHOD = local
+$(eval $(kernel-module))
+$(eval $(generic-package))
